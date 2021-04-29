@@ -1,0 +1,7 @@
+{
+  "name": "Technicolor",
+  "render_readme": true,
+  "iot_class": ["Local Polling"],
+  "domains": ["device_tracker"],
+  "version": "0.1.0"
+}
