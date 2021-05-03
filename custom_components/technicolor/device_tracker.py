@@ -1,13 +1,13 @@
 """Support for Technicolor routers."""
 import logging
-from pprint import pformat
+from typing import Dict, Any
 
-from technicolorgateway import TechnicolorGateway
 import voluptuous as vol
+from technicolorgateway import TechnicolorGateway
 
-from homeassistant.components.device_tracker import (
-    DeviceScanner,
-)
+import homeassistant.helpers.config_validation as cv
+from homeassistant.components.device_tracker.config_entry import ScannerEntity
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_DEVICES,
     CONF_EXCLUDE,
@@ -15,9 +15,11 @@ from homeassistant.const import (
     CONF_PASSWORD,
     CONF_USERNAME,
 )
-import homeassistant.helpers.config_validation as cv
+from homeassistant.core import HomeAssistant, callback
 
 DOMAIN = "technicolor"
+DEFAULT_DEVICE_NAME = "Unknown device"
+SOURCE_TYPE_ROUTER = "router"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,99 +39,97 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 
-def get_scanner(hass, config):
-    """Validate the configuration and returns a Technicolor scanner."""
-    info = config[DOMAIN]
-    devices = info[CONF_DEVICES]
-    excluded_devices = info[CONF_EXCLUDE]
+async def async_setup_entry(
+        hass: HomeAssistant, entry: ConfigEntry, async_add_entities
+) -> None:
+    """Set up device tracker for Technicolor component."""
+    gateway = hass.data[DOMAIN][entry.entry_id][DOMAIN]
 
-    gateway = TechnicolorGateway(
-        info.get(CONF_HOST), "80", info.get(CONF_USERNAME), info.get(CONF_PASSWORD)
-    )
-    gateway.srp6authenticate()
-    scanner = TechnicolorDeviceScanner(gateway, devices, excluded_devices)
+    tracked = set()
 
-    _LOGGER.debug("Logging in")
+    @callback
+    def update_gateway():
+        """Update the values of the router."""
+        add_entities(gateway, async_add_entities, tracked)
 
-    results = scanner._get_attached_devices()
-
-    if results is not None:
-        scanner.last_results = results
-    else:
-        _LOGGER.error("Failed to Login")
-        return None
-
-    return scanner
+    update_gateway()
 
 
-class TechnicolorDeviceScanner(DeviceScanner):
-    """Queries a Technicolor wireless router using web."""
 
-    def __init__(
-            self,
-            gateway,
-            devices,
-            excluded_devices,
-    ):
-        """Initialize the scanner."""
-        self.gateway = gateway
-        self.tracked_devices = devices
-        self.excluded_devices = excluded_devices
-        self.last_results = []
 
-    def get_device_name(self, device: str) -> str:
-        """Return the name of the given device or the MAC if we don't know."""
-        name = None
-        for dev in self.last_results:
-            if dev["mac"] == device:
-                name = dev["name"]
-                break
+@callback
+def add_entities(gateway, async_add_entities, tracked):
+    """Add new tracker entities from the gateway."""
+    new_tracked = []
 
-        if not name or name == "--":
-            name = device
+    devices = gateway.get_device_modal()
 
-        return name
+    for device in devices:
+        mac = device['mac']
+        if mac in tracked:
+            continue
 
-    def get_extra_attributes(self, device: str) -> dict:
-        """Get the extra attributes of a device."""
+        new_tracked.append(TechnicolorDeviceScanner(gateway, device))
+        tracked.add(mac)
+
+    if new_tracked:
+        async_add_entities(new_tracked)
+
+
+class TechnicolorDeviceScanner(ScannerEntity):
+    """Representation of a Technicolor device."""
+
+    def __init__(self, gateway: TechnicolorGateway, device) -> None:
+        """Initialize a AsusWrt device."""
+        self._gateway = gateway
+        self._device = device
+
+    @property
+    def unique_id(self) -> str:
+        """Return a unique ID."""
+        return self._device['mac']
+
+    @property
+    def name(self) -> str:
+        """Return the name."""
+        return self._device['name'] or DEFAULT_DEVICE_NAME
+
+    @property
+    def is_connected(self):
+        """Return true if the device is connected to the network."""
+        return True
+
+    @property
+    def source_type(self) -> str:
+        """Return the source type."""
+        return SOURCE_TYPE_ROUTER
+
+    @property
+    def extra_state_attributes(self) -> Dict[str, Any]:
+        """Return the attributes."""
         return {}
 
-    def scan_devices(self):
-        """Scan for new devices and return a list with found device IDs."""
-        self._update_info()
+    @property
+    def hostname(self) -> str:
+        """Return the hostname of device."""
+        return self._device['name']
 
-        devices = []
+    @property
+    def ip_address(self) -> str:
+        """Return the primary ip address of the device."""
+        return self._device['ip']
 
-        for dev in self.last_results:
-            tracked = (
-                    not self.tracked_devices
-                    or dev["mac"] in self.tracked_devices
-                    or dev["name"] in self.tracked_devices
-            )
-            tracked = tracked and (
-                    not self.excluded_devices
-                    or not (
-                    dev["mac"] in self.excluded_devices
-                    or dev["name"] in self.excluded_devices
-            )
-            )
-            if tracked:
-                devices.append(dev["mac"])
+    @property
+    def mac_address(self) -> str:
+        """Return the mac address of the device."""
+        return self._device['mac']
 
-        return devices
+    @property
+    def device_info(self) -> Dict[str, Any]:
+        """Return the device information."""
+        return {}
 
-    def _update_info(self):
-        _LOGGER.debug("Scanning")
-
-        results = self._get_attached_devices()
-
-        if _LOGGER.isEnabledFor(logging.DEBUG):
-            _LOGGER.debug("Scan result: \n%s", pformat(results))
-
-        if results is None:
-            _LOGGER.warning("Error scanning devices")
-
-        self.last_results = results or []
-
-    def _get_attached_devices(self):
-        return self.gateway.get_device_modal()
+    @property
+    def should_poll(self) -> bool:
+        """No polling needed."""
+        return False
