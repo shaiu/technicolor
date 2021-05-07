@@ -1,15 +1,13 @@
 """The technicolor integration."""
+from datetime import timedelta
 
 from .const import DOMAIN
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
-from technicolorgateway import TechnicolorGateway
-
-from homeassistant.const import (
-    CONF_HOST,
-    CONF_PASSWORD,
-    CONF_USERNAME,
-)
 from homeassistant.core import HomeAssistant
+from .router import TechnicolorRouter
+
+PLATFORMS = ["device_tracker"]
+SCAN_INTERVAL = timedelta(seconds=30)
 
 
 async def async_setup(hass, config):
@@ -44,13 +42,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     if not entry.options and yaml_options:
         hass.config_entries.async_update_entry(entry, options=yaml_options)
 
-    gateway = TechnicolorGateway(
-        entry.data[CONF_HOST], "80", entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD]
-    )
-    gateway.srp6authenticate()
+    technicolor_router = TechnicolorRouter(hass, entry)
+    await technicolor_router.setup()
+
+    hass.async_create_task(hass.config_entries.async_forward_entry_setup(entry, "device_tracker"))
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
-        DOMAIN: gateway,
+        DOMAIN: technicolor_router,
     }
 
     return True

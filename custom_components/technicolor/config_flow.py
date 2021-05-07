@@ -40,11 +40,8 @@ class TechnicolorFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema(
                 {
                     vol.Required(CONF_HOST, default=user_input.get(CONF_HOST, "")): str,
-                    vol.Required(
-                        CONF_USERNAME, default=user_input.get(CONF_USERNAME, "")
-                    ): str,
+                    vol.Required(CONF_USERNAME, default=user_input.get(CONF_USERNAME, "")): str,
                     vol.Required(CONF_PASSWORD): str,
-
                 }
             ),
             errors=errors or {},

@@ -3,10 +3,10 @@ import logging
 from typing import Dict, Any
 
 import voluptuous as vol
-from technicolorgateway import TechnicolorGateway
 
 import homeassistant.helpers.config_validation as cv
 from homeassistant.components.device_tracker.config_entry import ScannerEntity
+from .router import TechnicolorRouter
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_DEVICES,
@@ -16,8 +16,9 @@ from homeassistant.const import (
     CONF_USERNAME,
 )
 from homeassistant.core import HomeAssistant, callback
+from .const import DOMAIN
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-DOMAIN = "technicolor"
 DEFAULT_DEVICE_NAME = "Unknown device"
 SOURCE_TYPE_ROUTER = "router"
 
@@ -43,46 +44,57 @@ async def async_setup_entry(
         hass: HomeAssistant, entry: ConfigEntry, async_add_entities
 ) -> None:
     """Set up device tracker for Technicolor component."""
-    gateway = hass.data[DOMAIN][entry.entry_id][DOMAIN]
+    router = hass.data[DOMAIN][entry.entry_id][DOMAIN]
 
     tracked = set()
 
     @callback
-    def update_gateway():
+    def update_router():
         """Update the values of the router."""
-        add_entities(gateway, async_add_entities, tracked)
+        add_entities(router, async_add_entities, tracked)
 
-    update_gateway()
+    router.listeners.append(
+        async_dispatcher_connect(hass, router.signal_device_new, update_router)
+    )
 
-
+    update_router()
 
 
 @callback
-def add_entities(gateway, async_add_entities, tracked):
+def add_entities(router, async_add_entities, tracked):
     """Add new tracker entities from the gateway."""
+    _LOGGER.info(f"add_entities tracked ${tracked}")
     new_tracked = []
 
-    devices = gateway.get_device_modal()
-
-    for device in devices:
-        mac = device['mac']
+    for mac, device in router.devices.items():
         if mac in tracked:
             continue
 
-        new_tracked.append(TechnicolorDeviceScanner(gateway, device))
+        new_tracked.append(TechnicolorDeviceScanner(router, device))
         tracked.add(mac)
+        _LOGGER.info(f"add_entities {mac}")
 
     if new_tracked:
-        async_add_entities(new_tracked)
+        async_add_entities(new_tracked, True)
 
 
 class TechnicolorDeviceScanner(ScannerEntity):
     """Representation of a Technicolor device."""
 
-    def __init__(self, gateway: TechnicolorGateway, device) -> None:
-        """Initialize a AsusWrt device."""
-        self._gateway = gateway
+    def __init__(self, router: TechnicolorRouter, device) -> None:
+        """Initialize a Technicolor device."""
+        self._router = router
         self._device = device
+        self._mac = device["mac"]
+        self._active = False
+
+    @callback
+    def async_update_state(self) -> None:
+        """Update the Technicolor device."""
+        device = self._router.devices[self._mac]
+        self._device['ip'] = device['ip']
+        _LOGGER.info(f"updating state for ${self._mac} with ip ${self._device['ip']}")
+        self._active = self._device['ip'] is not None
 
     @property
     def unique_id(self) -> str:
@@ -97,7 +109,7 @@ class TechnicolorDeviceScanner(ScannerEntity):
     @property
     def is_connected(self):
         """Return true if the device is connected to the network."""
-        return True
+        return self._active
 
     @property
     def source_type(self) -> str:
@@ -133,3 +145,22 @@ class TechnicolorDeviceScanner(ScannerEntity):
     def should_poll(self) -> bool:
         """No polling needed."""
         return False
+
+    @callback
+    def async_on_demand_update(self):
+        """Update state."""
+        _LOGGER.info("in async_on_demand_update")
+        self.async_update_state()
+        self.async_write_ha_state()
+
+    async def async_added_to_hass(self):
+        """Register state update callback."""
+        _LOGGER.info("in async_added_to_hass")
+        self.async_update_state()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                self._router.signal_device_update,
+                self.async_on_demand_update,
+            )
+        )
