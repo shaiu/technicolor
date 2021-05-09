@@ -1,7 +1,7 @@
 {
   "domain": "technicolor",
   "name": "Technicolor",
-  "documentation": "https://www.home-assistant.io/integrations/technicolor",
+  "documentation": "https://github.com/shaiu/technicolor",
   "requirements": ["pytechnicolor==1.0.3"],
   "dependencies": [],
   "codeowners": [
@@ -9,5 +9,6 @@
   ],
   "iot_class": "local_polling",
   "config_flow": true,
-  "version": "1.0.0"
+  "version": "1.0.0",
+  "issue_tracker": "https://github.com/shaiu/technicolor/issues"
 }
