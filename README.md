@@ -8,3 +8,6 @@ Presence Detection - The Technicolor platform offers presence detection by looki
 
 It uses the https://pypi.org/project/pytechnicolor/ to retrieve devices
 
+# configuration
+
+Install as usual and then follow UI configuration to input your router IP address and credentials.
