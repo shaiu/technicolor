@@ -1,4 +1,4 @@
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/custom-components/hacs)
+[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/hacs/integration)
 
 [![license_badge](https://img.shields.io/github/license/shaiu/technicolor)](https://img.shields.io/github/license/shaiu/technicolor)
 
