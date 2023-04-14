@@ -39,7 +39,7 @@ class TechnicolorRouter:
         )
 
         try:
-            await self.hass.async_add_executor_job(self._api.srp6authenticate)
+            await self.hass.async_add_executor_job(self._api.authenticate)
         except Exception as e:
             _LOGGER.exception("Failed to connect to Technicolor", e)
             return ConfigEntryNotReady
