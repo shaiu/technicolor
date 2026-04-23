@@ -12,11 +12,12 @@ from homeassistant.const import (
     CONF_DEVICES,
     CONF_EXCLUDE,
     CONF_HOST,
+    CONF_PORT,
     CONF_PASSWORD,
     CONF_USERNAME,
 )
 from homeassistant.core import HomeAssistant, callback
-from .const import DOMAIN
+from .const import CONF_USE_SSL, CONF_VERIFY_SSL, DOMAIN
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 DEFAULT_DEVICE_NAME = "Unknown device"
@@ -26,15 +27,45 @@ _LOGGER = logging.getLogger(__name__)
 
 CONFIG_SCHEMA = vol.Schema(
     {
-        DOMAIN: vol.Schema(
-            {
-                vol.Required(CONF_HOST): cv.string,
-                vol.Required(CONF_USERNAME): cv.string,
-                vol.Required(CONF_PASSWORD): cv.string,
-                vol.Optional(CONF_DEVICES, default=[]): vol.All(cv.ensure_list, [cv.string]),
-                vol.Optional(CONF_EXCLUDE, default=[]): vol.All(cv.ensure_list, [cv.string]),
-            }
-        ),
+        DOMAIN: vol.Any(
+            vol.Schema(
+                {
+                    vol.Required(CONF_HOST): cv.string,
+                    vol.Optional(CONF_PORT, default=80): int,
+                    vol.Optional(CONF_USE_SSL, default=False): bool,
+                    vol.Optional(CONF_VERIFY_SSL, default=True): bool,
+                    vol.Required(CONF_USERNAME): cv.string,
+                    vol.Required(CONF_PASSWORD): cv.string,
+                    vol.Optional(CONF_DEVICES, default=[]): vol.All(
+                        cv.ensure_list, [cv.string]
+                    ),
+                    vol.Optional(CONF_EXCLUDE, default=[]): vol.All(
+                        cv.ensure_list, [cv.string]
+                    ),
+                }
+            ),
+            vol.All(
+                cv.ensure_list,
+                [
+                    vol.Schema(
+                        {
+                            vol.Required(CONF_HOST): cv.string,
+                            vol.Optional(CONF_PORT, default=80): int,
+                            vol.Optional(CONF_USE_SSL, default=False): bool,
+                            vol.Optional(CONF_VERIFY_SSL, default=True): bool,
+                            vol.Required(CONF_USERNAME): cv.string,
+                            vol.Required(CONF_PASSWORD): cv.string,
+                            vol.Optional(CONF_DEVICES, default=[]): vol.All(
+                                cv.ensure_list, [cv.string]
+                            ),
+                            vol.Optional(CONF_EXCLUDE, default=[]): vol.All(
+                                cv.ensure_list, [cv.string]
+                            ),
+                        }
+                    )
+                ],
+            ),
+        )
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -63,7 +94,7 @@ async def async_setup_entry(
 @callback
 def add_entities(router, async_add_entities, tracked):
     """Add new tracker entities from the gateway."""
-    _LOGGER.info(f"add_entities tracked ${tracked}")
+    _LOGGER.debug("add_entities tracked %s", tracked)
     new_tracked = []
 
     for mac, device in router.devices.items():
@@ -72,7 +103,7 @@ def add_entities(router, async_add_entities, tracked):
 
         new_tracked.append(TechnicolorDeviceScanner(router, device))
         tracked.add(mac)
-        _LOGGER.info(f"add_entities {mac}")
+        _LOGGER.debug("add_entities %s", mac)
 
     if new_tracked:
         async_add_entities(new_tracked, True)
@@ -93,13 +124,15 @@ class TechnicolorDeviceScanner(ScannerEntity):
         """Update the Technicolor device."""
         device = self._router.devices[self._mac]
         self._device['ip'] = device['ip']
-        _LOGGER.info(f"updating state for ${self._mac} with ip ${self._device['ip']}")
+        _LOGGER.debug(
+            "updating state for %s with ip %s", self._mac, self._device["ip"]
+        )
         self._active = self._device['ip'] is not None and self._device['ip'] != ""
 
     @property
     def unique_id(self) -> str:
         """Return a unique ID."""
-        return self._device['mac']
+        return f"{self._router.entry_id}_{self._device['mac']}"
 
     @property
     def name(self) -> str:
@@ -149,13 +182,13 @@ class TechnicolorDeviceScanner(ScannerEntity):
     @callback
     def async_on_demand_update(self):
         """Update state."""
-        _LOGGER.info("in async_on_demand_update")
+        _LOGGER.debug("in async_on_demand_update")
         self.async_update_state()
         self.async_write_ha_state()
 
     async def async_added_to_hass(self):
         """Register state update callback."""
-        _LOGGER.info("in async_added_to_hass")
+        _LOGGER.debug("in async_added_to_hass")
         self.async_update_state()
         self.async_on_remove(
             async_dispatcher_connect(
